@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<!-- Gazebo Fortress additions for the R2: friction, joint states, ground truth, and test actuators. -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="r2_gazebo" params="test_actuators">
+
+    <!-- Rubber tyres grip. The chassis keeps Gazebo's default friction: its collisions are
+         merged into base_footprint, and sdformat drops <gazebo reference> tags on merged collisions. -->
+    <xacro:macro name="tyre" params="link">
+      <gazebo reference="${link}">
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+      </gazebo>
+    </xacro:macro>
+    <xacro:tyre link="back_left_link"/>
+    <xacro:tyre link="back_right_link"/>
+    <xacro:tyre link="front_left_wheel"/>
+    <xacro:tyre link="front_right_wheel"/>
+
+    <gazebo>
+      <!-- Publishes every joint; the launch file bridges it to /joint_states -->
+      <plugin filename="ignition-gazebo-joint-state-publisher-system"
+              name="ignition::gazebo::systems::JointStatePublisher">
+        <topic>/model/r2/joint_states</topic>
+      </plugin>
+
+      <!-- Ground-truth pose, for tests and for judging odometry later. Never feeds the robot's own estimate. -->
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+              name="ignition::gazebo::systems::OdometryPublisher">
+        <odom_frame>odom</odom_frame>
+        <robot_base_frame>base_footprint</robot_base_frame>
+        <odom_topic>/model/r2/ground_truth</odom_topic>
+        <tf_topic>/model/r2/ground_truth/tf</tf_topic>
+        <odom_publish_frequency>50</odom_publish_frequency>
+        <dimensions>3</dimensions>
+      </plugin>
+    </gazebo>
+
+    <!-- Phase 1 test rig: drive each joint directly, to check the model before the
+         Ackermann plugin (Phase 2) takes over. Off by default. -->
+    <xacro:if value="${test_actuators}">
+      <xacro:macro name="wheel_speed" params="joint">
+        <gazebo>
+          <plugin filename="ignition-gazebo-joint-controller-system"
+                  name="ignition::gazebo::systems::JointController">
+            <joint_name>${joint}</joint_name>
+            <topic>/model/r2/test/${joint}/cmd_vel</topic>
+          </plugin>
+        </gazebo>
+      </xacro:macro>
+      <xacro:wheel_speed joint="back_left_joint"/>
+      <xacro:wheel_speed joint="back_right_joint"/>
+
+      <xacro:macro name="steer_angle" params="joint">
+        <gazebo>
+          <plugin filename="ignition-gazebo-joint-position-controller-system"
+                  name="ignition::gazebo::systems::JointPositionController">
+            <joint_name>${joint}</joint_name>
+            <topic>/model/r2/test/${joint}/cmd_pos</topic>
+            <use_velocity_commands>true</use_velocity_commands>
+            <p_gain>10</p_gain>
+            <cmd_max>3</cmd_max>
+            <cmd_min>-3</cmd_min>
+          </plugin>
+        </gazebo>
+      </xacro:macro>
+      <xacro:steer_angle joint="front_left_steer_joint"/>
+      <xacro:steer_angle joint="front_right_steer_joint"/>
+    </xacro:if>
+
+  </xacro:macro>
+</robot>
