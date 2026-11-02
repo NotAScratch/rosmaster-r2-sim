@@ -4,7 +4,7 @@ A Gazebo simulation of the Yahboom **Rosmaster R2**, the small Ackermann-steerin
 
 It is a companion to [Autonomous-Mapping-and-Navigation](https://github.com/NotAScratch/Autonomous-Mapping-and-Navigation), which builds SLAM and navigation for the same robot.
 
-> **Status:** Phase 1 done. The R2 model spawns in Gazebo, rests level on its wheels, rolls straight and steers within ±0.6 rad (9/9 automatic checks pass). Next: the Ackermann drive plugin. See [`docs/research/01-phase1-model.md`](docs/research/01-phase1-model.md).
+> **Status:** Phase 2 done. The simulated R2 drives with `/cmd_vel` and publishes `/odom_raw` like the real robot (15/15 automatic checks pass). Known gap: Fortress's plugin steers slowly (2.5 s to 90%). Next: sensors. See [`docs/research/02-phase2-drive.md`](docs/research/02-phase2-drive.md).
 
 ---
 
@@ -40,13 +40,15 @@ ros2 launch rosmaster_r2_sim sim.launch.py                 # PC, with the Gazebo
 ros2 launch rosmaster_r2_sim sim.launch.py headless:=true  # Jetson, server only
 ```
 
-To run the Phase 1 checks, launch with `test_actuators:=true`, then run `ros2 run rosmaster_r2_sim phase1_check.py`.
+Drive it with any `/cmd_vel` publisher, for example `python3 ~/teleop_wasd.py`.
+
+Automatic checks: `ros2 run rosmaster_r2_sim phase2_check.py` (drive), or launch with `test_actuators:=true` and run `phase1_check.py` (model).
 
 ## Roadmap
 
 - [x] **Phase 0, research:** survey the real robot's software, the robot model and the Gazebo plugins available ([survey](docs/research/00-system-survey.md))
 - [x] **Phase 1, model:** a simulation-ready robot model: simple collision shapes, fixed wheel axes, a real mass for the lidar link, a `base_footprint` root link ([write-up](docs/research/01-phase1-model.md))
-- [ ] **Phase 2, drive:** Ackermann steering plugin, odometry, joint states, a teleop test
+- [x] **Phase 2, drive:** Ackermann steering plugin, odometry, joint states, a teleop test ([write-up](docs/research/02-phase2-drive.md))
 - [ ] **Phase 3, sensors:** lidar, IMU, depth camera, bridged to ROS 2
 - [ ] **Phase 4, parity:** match the real robot's topics and TF tree, run the real EKF config against the simulation
 - [ ] **Phase 5, use it:** run `slam_toolbox` and Nav2 in simulation, then the same launch files on the real robot

@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
-<!-- Gazebo Fortress additions for the R2: friction, joint states, ground truth, and test actuators. -->
+<!-- Gazebo Fortress additions for the R2: friction, joint states, ground truth, the Ackermann drive,
+     and the Phase 1 test rig. -->
 <robot xmlns:xacro="http://ros.org/wiki/xacro">
 
   <xacro:macro name="r2_gazebo" params="test_actuators">
@@ -36,8 +37,41 @@
       </plugin>
     </gazebo>
 
-    <!-- Phase 1 test rig: drive each joint directly, to check the model before the
-         Ackermann plugin (Phase 2) takes over. Off by default. -->
+    <!-- Drive: /cmd_vel (linear.x m/s, angular.z rad/s) in, wheel odometry out.
+         Geometry comes from r2.urdf.xacro. The odometry is worked out from the rear wheel
+         joints and the steering angle, like the real base_node_R2, so it drifts like real odometry.
+         The launch file bridges it to /odom_raw; its TF is only bridged when asked for, because
+         on the real robot the EKF owns odom -> base_footprint. -->
+    <xacro:unless value="${test_actuators}">
+      <gazebo>
+        <plugin filename="ignition-gazebo-ackermann-steering-system"
+                name="ignition::gazebo::systems::AckermannSteering">
+          <left_joint>back_left_joint</left_joint>
+          <right_joint>back_right_joint</right_joint>
+          <left_steering_joint>front_left_steer_joint</left_steering_joint>
+          <right_steering_joint>front_right_steer_joint</right_steering_joint>
+          <wheel_base>${steer_x - rear_x}</wheel_base>
+          <wheel_separation>${2 * rear_y}</wheel_separation>
+          <kingpin_width>${2 * steer_y}</kingpin_width>
+          <wheel_radius>${wheel_radius}</wheel_radius>
+          <steering_limit>${steer_limit}</steering_limit>
+          <!-- The real driver clamps to 1.0 m/s (Ackman_driver_R2 xlinear_limit); acceleration not yet measured -->
+          <max_velocity>${max_speed}</max_velocity>
+          <min_velocity>${-max_speed}</min_velocity>
+          <max_acceleration>${max_accel}</max_acceleration>
+          <min_acceleration>${-max_accel}</min_acceleration>
+          <topic>/model/r2/cmd_vel</topic>
+          <odom_topic>/model/r2/odometry</odom_topic>
+          <tf_topic>/model/r2/odometry/tf</tf_topic>
+          <frame_id>odom</frame_id>
+          <child_frame_id>base_footprint</child_frame_id>
+          <odom_publish_frequency>50</odom_publish_frequency>
+        </plugin>
+      </gazebo>
+    </xacro:unless>
+
+    <!-- Phase 1 test rig: drive each joint directly, instead of the Ackermann plugin.
+         Off by default. -->
     <xacro:if value="${test_actuators}">
       <xacro:macro name="wheel_speed" params="joint">
         <gazebo>
