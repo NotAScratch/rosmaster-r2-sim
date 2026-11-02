@@ -29,6 +29,10 @@
   <xacro:property name="steer_limit" value="0.6"/>
   <xacro:property name="steer_mass" value="0.02"/>
 
+  <!-- Drive limits, not yet measured on the real robot (survey §7, question 1) -->
+  <xacro:property name="max_speed" value="1.0"/>
+  <xacro:property name="max_accel" value="1.0"/>
+
   <!-- Masses not yet measured on the real robot (survey §7, question 1).
        Chassis and camera are Yahboom's CAD values; the lidar is an estimate. -->
   <xacro:property name="chassis_mass" value="0.52447"/>

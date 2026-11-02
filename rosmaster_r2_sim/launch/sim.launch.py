@@ -2,6 +2,7 @@
 
     ros2 launch rosmaster_r2_sim sim.launch.py                  # with the Gazebo window
     ros2 launch rosmaster_r2_sim sim.launch.py headless:=true    # server only (Jetson)
+    ros2 launch rosmaster_r2_sim sim.launch.py publish_odom_tf:=true  # no EKF: odom TF from wheels
     ros2 launch rosmaster_r2_sim sim.launch.py test_actuators:=true   # Phase 1 test rig
 """
 import os
@@ -46,19 +47,20 @@ def launch_setup(context):
                    '-z', '0.005', '-Y', LaunchConfiguration('yaw')],
         output='screen')
 
+    bridge_configs = ['bridge']
+    if test_actuators == 'true':
+        bridge_configs.append('bridge_test')
+    else:
+        bridge_configs.append('bridge_drive')
+        if LaunchConfiguration('publish_odom_tf').perform(context) == 'true':
+            bridge_configs.append('bridge_odom_tf')
+
     bridges = [Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='bridge',
-        parameters=[{'config_file': os.path.join(pkg, 'config', 'bridge.yaml'),
-                     'use_sim_time': True}])]
-    if test_actuators == 'true':
-        bridges.append(Node(
-            package='ros_gz_bridge',
-            executable='parameter_bridge',
-            name='bridge_test',
-            parameters=[{'config_file': os.path.join(pkg, 'config', 'bridge_test.yaml'),
-                         'use_sim_time': True}]))
+        name=name,
+        parameters=[{'config_file': os.path.join(pkg, 'config', f'{name}.yaml'),
+                     'use_sim_time': True}]) for name in bridge_configs]
 
     return [gazebo, robot_state_publisher, spawn, *bridges]
 
@@ -72,7 +74,10 @@ def generate_launch_description():
         DeclareLaunchArgument('headless', default_value='false', choices=['true', 'false'],
                               description='Run the Gazebo server only, without its window'),
         DeclareLaunchArgument('test_actuators', default_value='false', choices=['true', 'false'],
-                              description='Add the Phase 1 joint test rig'),
+                              description='Replace the Ackermann drive with the Phase 1 joint test rig'),
+        DeclareLaunchArgument('publish_odom_tf', default_value='false', choices=['true', 'false'],
+                              description='Publish odom -> base_footprint from wheel odometry '
+                                          '(leave false when an EKF publishes it)'),
         DeclareLaunchArgument('world', default_value=os.path.join(pkg, 'worlds', 'empty.sdf')),
         DeclareLaunchArgument('x', default_value='0.0'),
         DeclareLaunchArgument('y', default_value='0.0'),
