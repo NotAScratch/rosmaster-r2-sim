@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<!--
+  Simulated sensors, set up to publish what the real drivers publish (topics, frames, rates).
+  Values marked "estimate" are not yet checked against datasheets or the real sensors
+  (docs/research/03-phase3-sensors.md).
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="r2_sensors" params="camera">
+
+    <!-- YDLIDAR 4ROS, as ydlidar_ros2_driver publishes it with ydlidar.yaml:
+         /scan, frame "laser", 10 Hz, front half only (-90..+90 deg).
+         Resolution 0.18 deg (20 kHz sample rate / 10 Hz over 360 deg).
+         Range: 0.01 m (the real driver's range_min) to 12 m (estimate; 9.6 m seen in a room).
+         Noise: 1 cm (estimate, typical for time-of-flight).
+         The scan origin sits inside the lidar's own housing mesh, which the real lidar sees out
+         of through its window. Visibility bit 0 marks the housing and the camera body,
+         and the lidar's mask leaves that bit out. The deck edges still block beams, as on
+         the real robot. -->
+    <gazebo reference="laser_link">
+      <visual>
+        <visibility_flags>1</visibility_flags>
+      </visual>
+    </gazebo>
+    <!-- The camera body mesh crosses the lidar's scan plane in this model (its centre is
+         5 cm ahead of the scan origin, at almost the same height), so without this the
+         lidar's whole forward sector returns the camera at 0.02-0.07 m. The real robot's
+         recorded scans (mapping repo, Phase 1) show the opposite: 86% of the front half
+         are room returns, with only small near-field patches from the deck edges and the
+         camera's sides. The real lidar's plane clears the camera, so the simulated lidar
+         ignores the camera body the same way it ignores the housing above. -->
+    <gazebo reference="camera_link">
+      <visual>
+        <visibility_flags>1</visibility_flags>
+      </visual>
+    </gazebo>
+    <gazebo reference="laser">
+      <sensor type="gpu_lidar" name="lidar">
+        <topic>/model/r2/scan</topic>
+        <ignition_frame_id>laser</ignition_frame_id>
+        <update_rate>10</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>1001</samples>
+              <resolution>1</resolution>
+              <min_angle>${-pi / 2}</min_angle>
+              <max_angle>${pi / 2}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.01</min>
+            <max>12.0</max>
+            <resolution>0.001</resolution>
+          </range>
+          <visibility_mask>4294967294</visibility_mask>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+    </gazebo>
+
+    <!-- Board IMU, as Ackman_driver_R2 publishes it: /imu/data_raw, frame imu_link, 10 Hz
+         (the driver's 0.1 s timer). No magnetometer: imu_filter_madgwick runs with use_mag false.
+         Noise: estimate, typical for an MPU-class MEMS IMU. -->
+    <gazebo reference="imu_link">
+      <sensor type="imu" name="imu">
+        <topic>/model/r2/imu</topic>
+        <ignition_frame_id>imu_link</ignition_frame_id>
+        <update_rate>10</update_rate>
+        <always_on>true</always_on>
+        <imu>
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </gazebo>
+
+    <!-- Orbbec Astra Plus, as ros2_astra_camera publishes it (astro_pro_plus.launch.xml):
+         colour and depth 640x480 at 30 fps, in their own optical frames.
+         Field of view 58.4 x 45.5 deg and depth range 0.6 to 8 m: estimates from the Astra series. -->
+    <xacro:if value="${camera}">
+      <gazebo reference="camera_color_frame">
+        <sensor type="camera" name="color">
+          <topic>/model/r2/camera/color/image_raw</topic>
+          <ignition_frame_id>camera_color_optical_frame</ignition_frame_id>
+          <update_rate>30</update_rate>
+          <always_on>true</always_on>
+          <camera>
+            <horizontal_fov>1.0193</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>20</far></clip>
+          </camera>
+        </sensor>
+      </gazebo>
+
+      <gazebo reference="camera_depth_frame">
+        <sensor type="depth_camera" name="depth">
+          <topic>/model/r2/camera/depth/image_raw</topic>
+          <ignition_frame_id>camera_depth_optical_frame</ignition_frame_id>
+          <update_rate>30</update_rate>
+          <always_on>true</always_on>
+          <camera>
+            <horizontal_fov>1.0193</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R_FLOAT32</format></image>
+            <clip><near>0.6</near><far>8.0</far></clip>
+          </camera>
+        </sensor>
+      </gazebo>
+    </xacro:if>
+
+  </xacro:macro>
+</robot>
