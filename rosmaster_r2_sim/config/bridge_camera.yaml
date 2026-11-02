@@ -1,0 +1,30 @@
+# Astra Plus, under ros2_astra_camera's topic names (only with camera:=true).
+- ros_topic_name: /camera/color/image_raw
+  gz_topic_name: /model/r2/camera/color/image_raw
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: ignition.msgs.Image
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera/color/camera_info
+  gz_topic_name: /model/r2/camera/color/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: ignition.msgs.CameraInfo
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera/depth/image_raw
+  gz_topic_name: /model/r2/camera/depth/image_raw
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: ignition.msgs.Image
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera/depth/camera_info
+  gz_topic_name: /model/r2/camera/depth/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: ignition.msgs.CameraInfo
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera/depth/points
+  gz_topic_name: /model/r2/camera/depth/image_raw/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: ignition.msgs.PointCloudPacked
+  direction: GZ_TO_ROS

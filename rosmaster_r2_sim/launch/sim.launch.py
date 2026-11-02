@@ -3,25 +3,36 @@
     ros2 launch rosmaster_r2_sim sim.launch.py                  # with the Gazebo window
     ros2 launch rosmaster_r2_sim sim.launch.py headless:=true    # server only (Jetson)
     ros2 launch rosmaster_r2_sim sim.launch.py publish_odom_tf:=true  # no EKF: odom TF from wheels
+    ros2 launch rosmaster_r2_sim sim.launch.py world:=test_room      # walls and obstacles
+    ros2 launch rosmaster_r2_sim sim.launch.py camera:=false          # no depth camera (faster)
     ros2 launch rosmaster_r2_sim sim.launch.py test_actuators:=true   # Phase 1 test rig
+
+The robot is spawned from a converted SDF file, not from the robot_description topic:
+Fortress's create-from-topic path drops <visibility_flags> from the model's visuals
+(the lidar then sees its own housing and the camera), while create-from-file keeps them.
 """
 import os
+import subprocess
+import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (AppendEnvironmentVariable, DeclareLaunchArgument,
                             IncludeLaunchDescription, OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def launch_setup(context):
     pkg = get_package_share_directory('rosmaster_r2_sim')
     headless = LaunchConfiguration('headless').perform(context) == 'true'
     test_actuators = LaunchConfiguration('test_actuators').perform(context)
+    camera = LaunchConfiguration('camera').perform(context)
     world = LaunchConfiguration('world').perform(context)
+    if os.sep not in world:
+        # A bare name means one of this package's worlds
+        world = os.path.join(pkg, 'worlds', world if world.endswith('.sdf') else f'{world}.sdf')
 
     gz_args = f"-r {'-s ' if headless else ''}{world}"
     gazebo = IncludeLaunchDescription(
@@ -29,25 +40,37 @@ def launch_setup(context):
             get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
         launch_arguments={'gz_args': gz_args, 'on_exit_shutdown': 'true'}.items())
 
-    robot_description = ParameterValue(
-        Command(['xacro ', os.path.join(pkg, 'urdf', 'r2.urdf.xacro'),
-                 ' test_actuators:=', test_actuators]),
-        value_type=str)
-
+    # xacro -> URDF (for robot_state_publisher) -> SDF (for Gazebo). Spawning from the
+    # URDF topic instead would lose the visuals' visibility_flags (see the module docstring).
+    urdf = subprocess.run(
+        ['xacro', os.path.join(pkg, 'urdf', 'r2.urdf.xacro'),
+         f'test_actuators:={test_actuators}', f'camera:={camera}'],
+        capture_output=True, text=True, check=True).stdout
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        parameters=[{'robot_description': robot_description, 'use_sim_time': True}])
+        parameters=[{'robot_description': urdf, 'use_sim_time': True}])
+
+    urdf_file = tempfile.NamedTemporaryFile(prefix='r2_', suffix='.urdf', delete=False)
+    urdf_file.write(urdf.encode())
+    urdf_file.close()
+    sdf_file = tempfile.NamedTemporaryFile(prefix='r2_', suffix='.sdf', delete=False)
+    sdf = subprocess.run(['ign', 'sdf', '-p', urdf_file.name],
+                         capture_output=True, text=True, check=True).stdout
+    sdf_file.write(sdf.encode())
+    sdf_file.close()
 
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
-        arguments=['-topic', 'robot_description', '-name', 'r2',
+        arguments=['-file', sdf_file.name, '-name', 'r2',
                    '-x', LaunchConfiguration('x'), '-y', LaunchConfiguration('y'),
                    '-z', '0.005', '-Y', LaunchConfiguration('yaw')],
         output='screen')
 
-    bridge_configs = ['bridge']
+    bridge_configs = ['bridge', 'bridge_sensors']
+    if camera == 'true':
+        bridge_configs.append('bridge_camera')
     if test_actuators == 'true':
         bridge_configs.append('bridge_test')
     else:
@@ -66,7 +89,6 @@ def launch_setup(context):
 
 
 def generate_launch_description():
-    pkg = get_package_share_directory('rosmaster_r2_sim')
     # Gazebo resolves package://yahboomcar_description/... by searching this path
     meshes_root = os.path.dirname(get_package_share_directory('yahboomcar_description'))
 
@@ -78,7 +100,10 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_odom_tf', default_value='false', choices=['true', 'false'],
                               description='Publish odom -> base_footprint from wheel odometry '
                                           '(leave false when an EKF publishes it)'),
-        DeclareLaunchArgument('world', default_value=os.path.join(pkg, 'worlds', 'empty.sdf')),
+        DeclareLaunchArgument('world', default_value='empty',
+                              description="A world in this package ('empty', 'test_room') or a path to an .sdf file"),
+        DeclareLaunchArgument('camera', default_value='true', choices=['true', 'false'],
+                              description='Simulate the Astra Plus colour and depth camera'),
         DeclareLaunchArgument('x', default_value='0.0'),
         DeclareLaunchArgument('y', default_value='0.0'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
