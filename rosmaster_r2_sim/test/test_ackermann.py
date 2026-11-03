@@ -77,3 +77,19 @@ def test_odometry_ignores_nonpositive_dt():
     odo.update(0.2, 0.0, 2.0)
     assert odo.update(0.2, 0.0, 2.0) is False and odo.update(0.2, 0.0, 1.5) is False
     assert odo.x == pytest.approx(0.2)
+
+
+def test_bicycle_angle_continuous_through_straight():
+    # The two steering joints track separately; near straight they can read opposite signs
+    assert abs(bicycle_angle_from(1e-3, -0.999e-3, K, L)) < 1e-5
+    assert abs(bicycle_angle_from(0.01, -0.0099, K, L)) < 1e-3
+
+
+def test_odometry_restarts_after_time_jump_back():
+    # A Gazebo world reset restarts sim time at 0: start again, like the EKF's reset_on_time_jump
+    odo = BicycleOdometry(L)
+    for t in (100.0, 101.0):
+        odo.update(0.2, 0.0, t)
+    odo.update(0.2, 0.0, 0.0)
+    assert odo.update(0.2, 0.0, 1.0) is True
+    assert odo.x == pytest.approx(0.2)

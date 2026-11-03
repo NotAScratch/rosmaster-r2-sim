@@ -7,6 +7,7 @@ the angle the real base_node_R2 integrates.
 import math
 
 MIN_SPEED = 1e-3   # below this a turn request has no meaning for a car: steer straight
+TIME_JUMP = 1.0    # s; a stamp this far back means the clock restarted (a Gazebo world reset)
 
 
 def bicycle_angle_for(v, w, wheel_base):
@@ -40,13 +41,14 @@ def rear_wheel_speeds(v, delta, wheel_base, wheel_separation, wheel_radius):
 
 
 def bicycle_angle_from(left, right, kingpin_width, wheel_base):
-    """Bicycle angle from the two steering joint angles (inverse of wheel_angles)."""
-    if abs(left) < 1e-9 and abs(right) < 1e-9:
-        return 0.0
-    # cot of the bicycle angle is the mean of the two wheels' cots; work with tan
-    # so a straight wheel (cot infinite) never divides by zero
+    """Bicycle angle from the two steering joint angles (inverse of wheel_angles).
+
+    Each wheel gives its own bicycle angle (cot delta = cot wheel -+ kingpin/2 / wheel base),
+    and the two are averaged. Written with tan, this is continuous through straight ahead:
+    the two joints track separately and can read slightly opposite angles there."""
+    k = kingpin_width / (2 * wheel_base)
     tl, tr = math.tan(left), math.tan(right)
-    return math.atan(2 * tl * tr / (tl + tr)) if tl + tr != 0 else 0.0
+    return (math.atan(tl / (1 + tl * k)) + math.atan(tr / (1 - tr * k))) / 2
 
 
 def step_toward(current, target, max_rate, dt):
@@ -65,7 +67,10 @@ class BicycleOdometry:
 
     def update(self, v, delta, stamp):
         """Integrate since the last stamp (seconds). False if nothing was integrated:
-        the first call, or a stamp that is not newer than the last one."""
+        the first call, a stamp that is not newer than the last one, or a clock restart
+        (then the pose starts again from zero, like the EKF's reset_on_time_jump)."""
+        if self.stamp is not None and stamp < self.stamp - TIME_JUMP:
+            self.__init__(self.wheel_base)
         if self.stamp is not None and stamp <= self.stamp:
             return False
         self.w = v * math.tan(delta) / self.wheel_base

@@ -4,7 +4,7 @@ A Gazebo simulation of the Yahboom **Rosmaster R2**, the small Ackermann-steerin
 
 It is a companion to [Autonomous-Mapping-and-Navigation](https://github.com/NotAScratch/Autonomous-Mapping-and-Navigation), which builds SLAM and navigation for the same robot.
 
-> **Status:** Phase 4 done. The real robot's Madgwick filter and EKF run unchanged against the simulation, on the real topics, frames and TF tree (16/16 parity checks pass; EKF within 0.2% on distance and 2.4% on turning). A new drive node steers like a servo instead of Gazebo's slow plugin. Found on the way: the real EKF config fuses two absolute yaws and makes `/odom` zig-zag. Not yet measured on the robot: steering speed, IMU noise. Next: SLAM and Nav2. See [`docs/research/04-phase4-parity.md`](docs/research/04-phase4-parity.md).
+> **Status:** Phase 4 done. The real robot's Madgwick filter and EKF run unchanged against the simulation, on the real topics, frames and TF tree (16/16 parity checks pass; EKF within 0.9% on distance and 2.8% on turning). A new drive node steers like a servo instead of Gazebo's slow plugin. Found on the way: the real EKF config fuses two absolute yaws and makes `/odom` zig-zag. Not yet measured on the robot: steering speed, IMU noise. Next: SLAM and Nav2. See [`docs/research/04-phase4-parity.md`](docs/research/04-phase4-parity.md).
 
 ---
 

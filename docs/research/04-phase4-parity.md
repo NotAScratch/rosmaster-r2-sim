@@ -9,7 +9,7 @@ Goal: the real robot's IMU filter and EKF run unchanged against the simulation, 
 | File | Change |
 |------|--------|
 | `scripts/r2_drive.py` | New drive node, in place of Gazebo's `AckermannSteering` (Phase 2, option B). Stands in for `Ackman_driver_R2` + motor board + `base_node_R2`: `/cmd_vel` → steering angles and rear wheel speeds; `/joint_states` → `/vel_raw`, `/odom_raw`, optional odom TF |
-| `scripts/ackermann.py`, `test/test_ackermann.py` | The geometry and odometry maths, with 9 unit tests (`python3 -m pytest rosmaster_r2_sim/test`) |
+| `scripts/ackermann.py`, `test/test_ackermann.py` | The geometry and odometry maths, with 11 unit tests (`python3 -m pytest rosmaster_r2_sim/test`) |
 | `config/r2_drive.yaml` | Drive limits: speed, acceleration, **steering speed**, rates |
 | `urdf/r2.gazebo.xacro` | Joint controllers always on (speed on the rear wheels, position on the steering); the plugin is gone |
 | `urdf/r2.urdf.xacro` | Steering joint velocity limit 3 → 20 rad/s, so `steer_rate` is what limits the steering |
@@ -50,15 +50,15 @@ Goal: the real robot's IMU filter and EKF run unchanged against the simulation, 
 | The real robot's topics and types (`/cmd_vel`, `/vel_raw`, `/odom_raw`, `/imu/data_raw`, `/imu/data`, `/odom`, `/scan`, `/joint_states`, `/tf`, `/tf_static`, camera images) | PASS |
 | Frames of `/odom_raw`, `/odom` (`odom → base_footprint`), `/imu/data_raw`, `/imu/data` (`imu_link`), `/scan` (`laser`) | PASS |
 | TF `odom → base_footprint → base_link → laser / imu_link / camera_link` | PASS |
-| `odom → base_footprint` comes only from the EKF | PASS, 50 transforms over 5 s, all equal to `/odom` at the same stamp |
+| `odom → base_footprint` comes only from the EKF | PASS, 49 transforms over 5 s, all equal to `/odom` at the same stamp |
 | `/odom_raw` covariances | PASS, exactly `base_node_R2`'s |
 | `/odom_raw` rate | PASS, 10.0 Hz |
 | `/imu/data` orientation, unit quaternion | PASS |
-| `base_link` level when still, from Madgwick | PASS, worst roll/pitch 0.66° |
-| **EKF `/odom` distance** over the drive sequence | PASS, 6.900 m vs 6.884 m true (+0.2%) |
-| **EKF `/odom` turning** | PASS, 488.6° vs 477.2° true (+2.4%) |
-| `/odom_raw` alone (information) | 6.825 m (−0.9%), 481.4° (+0.9%) |
-| EKF yaw jitter while straight or stopped (information) | **59.5° of back-and-forth for a net +7.8°**, see below |
+| `base_link` level when still, from Madgwick | PASS, worst roll/pitch 0.62° |
+| **EKF `/odom` distance** over the drive sequence | PASS, 6.935 m vs 6.870 m true (+0.9%) |
+| **EKF `/odom` turning** | PASS, 488.3° vs 475.0° true (+2.8%) |
+| `/odom_raw` alone (information) | 6.805 m (−0.9%), 477.5° (+0.5%) |
+| EKF yaw jitter while straight or stopped (information) | **69.2° of back-and-forth for a net +4.3°**, see below |
 
 **16/16 checks passed.**
 
@@ -90,7 +90,9 @@ This is the real robot's config, run unchanged, so the real robot should do the 
 
 **3. The steering was 25× too slow, now a setting.** Phase 2's plugin took 2.5 s to steer; `r2_drive.py` moves the steering at `steer_rate` like a servo, 0.10 s for the same step. A 3 rad/s velocity limit on the steering joints in the model would have capped it, so it was raised for the simulation.
 
-**4. `r2_drive.py` crashed on Ctrl-C.** The launch file stopping it raised `ExternalShutdownException` (exit −11 under launch). It now exits cleanly.
+**4. Two bugs the final review found.** Near straight ahead the two steering joints can read slightly opposite angles; the first formula for the bicycle angle had a pole there (1 mrad / −0.999 mrad gave −1.11 rad, one sample could add degrees of yaw). Each wheel now gives its own bicycle angle and the two are averaged, which is continuous through zero. And after a Gazebo world reset (sim time back to 0), `/odom_raw` stopped integrating until the clock passed its old value; it now starts again from zero, like the EKF's `reset_on_time_jump`. Both have unit tests.
+
+**5. `r2_drive.py` crashed on Ctrl-C.** The launch file stopping it raised `ExternalShutdownException` (exit −11 under launch). It now exits cleanly.
 
 ## Remaining known gaps
 
