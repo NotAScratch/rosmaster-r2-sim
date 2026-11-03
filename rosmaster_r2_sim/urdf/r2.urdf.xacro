@@ -30,9 +30,9 @@
   <xacro:property name="steer_limit" value="0.6"/>
   <xacro:property name="steer_mass" value="0.02"/>
 
-  <!-- Drive limits, not yet measured on the real robot (survey §7, question 1) -->
-  <xacro:property name="max_speed" value="1.0"/>
-  <xacro:property name="max_accel" value="1.0"/>
+  <!-- Steering joints may move faster than any servo; r2_drive.py's steer_rate
+       (config/r2_drive.yaml) sets the actual steering speed -->
+  <xacro:property name="steer_max_velocity" value="20"/>
 
   <!-- Masses not yet measured on the real robot (survey §7, question 1).
        Chassis and camera are Yahboom's CAD values; the lidar is an estimate. -->
@@ -151,7 +151,7 @@
     <child link="front_left_steer"/>
     <origin xyz="${steer_x} ${steer_y} 0.0262" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="${-steer_limit}" upper="${steer_limit}" effort="10" velocity="3"/>
+    <limit lower="${-steer_limit}" upper="${steer_limit}" effort="10" velocity="${steer_max_velocity}"/>
   </joint>
 
   <xacro:wheel name="front_left_wheel"/>
@@ -168,7 +168,7 @@
     <child link="front_right_steer"/>
     <origin xyz="${steer_x} ${-steer_y} 0.0242" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="${-steer_limit}" upper="${steer_limit}" effort="10" velocity="3"/>
+    <limit lower="${-steer_limit}" upper="${steer_limit}" effort="10" velocity="${steer_max_velocity}"/>
   </joint>
 
   <xacro:wheel name="front_right_wheel"/>
@@ -265,7 +265,7 @@
   <xacro:camera_stream stream="depth" y="0.0125"/>
 
   <xacro:include filename="$(find rosmaster_r2_sim)/urdf/r2.gazebo.xacro"/>
-  <xacro:r2_gazebo test_actuators="$(arg test_actuators)"/>
+  <xacro:r2_gazebo/>
 
   <xacro:include filename="$(find rosmaster_r2_sim)/urdf/r2.sensors.xacro"/>
   <xacro:r2_sensors camera="$(arg camera)"/>

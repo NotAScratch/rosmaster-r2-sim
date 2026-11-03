@@ -14,6 +14,7 @@ Fortress's create-from-topic path drops <visibility_flags> from the model's visu
 import os
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -22,6 +23,25 @@ from launch.actions import (AppendEnvironmentVariable, DeclareLaunchArgument,
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+
+def drive_geometry(urdf):
+    """r2_drive.py's geometry, read from the same URDF Gazebo simulates (one source of truth)."""
+    root = ET.fromstring(urdf)
+    joints = {j.get('name'): j for j in root.findall('joint')}
+
+    def xyz(joint):
+        return [float(v) for v in joints[joint].find('origin').get('xyz').split()]
+
+    rear, steer = xyz('back_left_joint'), xyz('front_left_steer_joint')
+    wheel = next(link for link in root.findall('link') if link.get('name') == 'back_left_link')
+    return {
+        'wheel_base': steer[0] - rear[0],
+        'wheel_separation': 2 * abs(rear[1]),
+        'kingpin_width': 2 * abs(steer[1]),
+        'wheel_radius': float(wheel.find('collision/geometry/cylinder').get('radius')),
+        'steer_limit': float(joints['front_left_steer_joint'].find('limit').get('upper')),
+    }
 
 
 def launch_setup(context):
@@ -71,12 +91,19 @@ def launch_setup(context):
     bridge_configs = ['bridge', 'bridge_sensors']
     if camera == 'true':
         bridge_configs.append('bridge_camera')
+    drive = []
     if test_actuators == 'true':
         bridge_configs.append('bridge_test')
     else:
         bridge_configs.append('bridge_drive')
-        if LaunchConfiguration('publish_odom_tf').perform(context) == 'true':
-            bridge_configs.append('bridge_odom_tf')
+        drive = [Node(
+            package='rosmaster_r2_sim',
+            executable='r2_drive.py',
+            name='r2_drive',
+            parameters=[os.path.join(pkg, 'config', 'r2_drive.yaml'), drive_geometry(urdf), {
+                'publish_odom_tf': LaunchConfiguration('publish_odom_tf').perform(context) == 'true',
+                'use_sim_time': True}],
+            output='screen')]
 
     bridges = [Node(
         package='ros_gz_bridge',
@@ -85,7 +112,7 @@ def launch_setup(context):
         parameters=[{'config_file': os.path.join(pkg, 'config', f'{name}.yaml'),
                      'use_sim_time': True}]) for name in bridge_configs]
 
-    return [gazebo, robot_state_publisher, spawn, *bridges]
+    return [gazebo, robot_state_publisher, spawn, *bridges, *drive]
 
 
 def generate_launch_description():
@@ -96,7 +123,7 @@ def generate_launch_description():
         DeclareLaunchArgument('headless', default_value='false', choices=['true', 'false'],
                               description='Run the Gazebo server only, without its window'),
         DeclareLaunchArgument('test_actuators', default_value='false', choices=['true', 'false'],
-                              description='Replace the Ackermann drive with the Phase 1 joint test rig'),
+                              description='No r2_drive: the Phase 1 checks command the joints directly'),
         DeclareLaunchArgument('publish_odom_tf', default_value='false', choices=['true', 'false'],
                               description='Publish odom -> base_footprint from wheel odometry '
                                           '(leave false when an EKF publishes it)'),

@@ -1,7 +1,0 @@
-# odom -> base_footprint from wheel odometry. Only with publish_odom_tf:=true,
-# for running without the EKF (on the real robot the EKF publishes this transform).
-- ros_topic_name: /tf
-  gz_topic_name: /model/r2/odometry/tf
-  ros_type_name: tf2_msgs/msg/TFMessage
-  gz_type_name: ignition.msgs.Pose_V
-  direction: GZ_TO_ROS
