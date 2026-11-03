@@ -1,0 +1,9 @@
+# r2_drive.py: drive limits of the simulated R2. The geometry (wheel base, track, kingpins,
+# wheel radius, steering limit) is read from the URDF by sim.launch.py, not set here.
+r2_drive:
+  ros__parameters:
+    max_speed: 1.0      # m/s, the real Ackman_driver_R2 clamps to 1.0 (xlinear_limit)
+    max_accel: 1.0      # m/s^2, guess, not yet measured on the robot
+    steer_rate: 5.0     # rad/s, guess for a hobby servo; measure the real one (Phase 4 Task 5)
+    control_rate: 50.0  # Hz, joint commands
+    odom_rate: 10.0     # Hz, /odom_raw and /vel_raw, like the real driver's 0.1 s timer

@@ -4,7 +4,7 @@ A Gazebo simulation of the Yahboom **Rosmaster R2**, the small Ackermann-steerin
 
 It is a companion to [Autonomous-Mapping-and-Navigation](https://github.com/NotAScratch/Autonomous-Mapping-and-Navigation), which builds SLAM and navigation for the same robot.
 
-> **Status:** Phase 3 done. The simulated R2 has its lidar, IMU and depth camera, publishing the real drivers' topics, frames and rates (17/17 automatic checks pass; the lidar matches the test room to 7 mm). Known gaps: camera rates need a PC-class GPU to verify at 30 fps; sensor rates are only checked at real-time factor ≥ 0.9. Next: parity with the real stack. See [`docs/research/03-phase3-sensors.md`](docs/research/03-phase3-sensors.md).
+> **Status:** Phase 4 done. The real robot's Madgwick filter and EKF run unchanged against the simulation, on the real topics, frames and TF tree (16/16 parity checks pass; EKF within 0.9% on distance and 2.8% on turning). A new drive node steers like a servo instead of Gazebo's slow plugin. Found on the way: the real EKF config fuses two absolute yaws and makes `/odom` zig-zag. Not yet measured on the robot: steering speed, IMU noise. Next: SLAM and Nav2. See [`docs/research/04-phase4-parity.md`](docs/research/04-phase4-parity.md).
 
 ---
 
@@ -32,17 +32,19 @@ Needs Ubuntu 22.04, ROS 2 Humble, `ros-humble-ros-gz`, and Yahboom's `yahboomcar
 
 ```bash
 source /opt/ros/humble/setup.bash
+source ~/yahboomcar_ros2_ws/software/library_ws/install/setup.bash   # robot_localization
 source ~/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 colcon build --symlink-install && source install/setup.bash
 
 export ROS_DOMAIN_ID=77 IGN_PARTITION=r2sim   # keep away from the real robot
 ros2 launch rosmaster_r2_sim sim.launch.py                 # PC, with the Gazebo window
 ros2 launch rosmaster_r2_sim sim.launch.py headless:=true  # Jetson, server only
+ros2 launch rosmaster_r2_sim sim.launch.py headless:=true localization:=true  # + the real Madgwick filter and EKF
 ```
 
 Drive it with any `/cmd_vel` publisher, for example `python3 ~/teleop_wasd.py`.
 
-Automatic checks: `ros2 run rosmaster_r2_sim phase2_check.py` (drive), `phase3_check.py` (sensors, in the `test_room` world), or launch with `test_actuators:=true` and run `phase1_check.py` (model).
+Automatic checks: `ros2 run rosmaster_r2_sim phase2_check.py` (drive), `phase3_check.py` (sensors, in the `test_room` world), `phase4_check.py` (parity, with `localization:=true`; `--passive` on the real robot), or launch with `test_actuators:=true` and run `phase1_check.py` (model). Unit tests: `python3 -m pytest rosmaster_r2_sim/test`.
 
 ## Roadmap
 
@@ -50,7 +52,7 @@ Automatic checks: `ros2 run rosmaster_r2_sim phase2_check.py` (drive), `phase3_c
 - [x] **Phase 1, model:** a simulation-ready robot model: simple collision shapes, fixed wheel axes, a real mass for the lidar link, a `base_footprint` root link ([write-up](docs/research/01-phase1-model.md))
 - [x] **Phase 2, drive:** Ackermann steering plugin, odometry, joint states, a teleop test ([write-up](docs/research/02-phase2-drive.md))
 - [x] **Phase 3, sensors:** lidar, IMU, depth camera, bridged to ROS 2 ([write-up](docs/research/03-phase3-sensors.md))
-- [ ] **Phase 4, parity:** match the real robot's topics and TF tree, run the real EKF config against the simulation
+- [x] **Phase 4, parity:** match the real robot's topics and TF tree, run the real EKF config against the simulation ([write-up](docs/research/04-phase4-parity.md))
 - [ ] **Phase 5, use it:** run `slam_toolbox` and Nav2 in simulation, then the same launch files on the real robot
 
 ## Licence

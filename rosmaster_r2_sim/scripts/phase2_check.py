@@ -14,9 +14,12 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from rcl_interfaces.srv import GetParameters
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from tf2_msgs.msg import TFMessage
+
+from ackermann import bicycle_angle_from
 
 WHEEL_BASE = 0.23529
 KINGPIN_WIDTH = 0.130
@@ -48,6 +51,8 @@ class Phase2Check(Node):
         self.odom_tf_seen = False
         self.create_subscription(Odometry, '/ground_truth/odom', lambda m: setattr(self, 'truth', m), 10)
         self.create_subscription(Odometry, '/odom_raw', lambda m: setattr(self, 'odom', m), 10)
+        self.vel_raw = None
+        self.create_subscription(Twist, '/vel_raw', lambda m: setattr(self, 'vel_raw', m), 10)
         self.create_subscription(JointState, '/joint_states', self.on_joints, 10)
         self.create_subscription(TFMessage, '/tf', self.on_tf, 10)
         self.cmd = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -95,10 +100,20 @@ class Phase2Check(Node):
     def steering(self):
         return self.joints['front_left_steer_joint'], self.joints['front_right_steer_joint']
 
+    def bicycle_angle(self):
+        return bicycle_angle_from(*self.steering(), KINGPIN_WIDTH, WHEEL_BASE)
+
+    def drive_parameter(self, name):
+        """A parameter of the running r2_drive node (the steering speed is a setting there)."""
+        client = self.create_client(GetParameters, '/r2_drive/get_parameters')
+        if not client.wait_for_service(timeout_sec=5.0):
+            return None
+        future = client.call_async(GetParameters.Request(names=[name]))
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+        return future.result().values[0].double_value if future.result() else None
+
     def settle_steering(self, v, w, timeout=10.0):
-        """Keep driving until the steering stops moving. Returns the time it took.
-        Gazebo Fortress's AckermannSteering turns the wheels slowly (fixed gain, ~1.2 s time
-        constant), so a turn is only steady after several seconds."""
+        """Keep driving until the steering stops moving. Returns the time it took."""
         start = self.now()
         last = self.steering()
         while rclpy.ok() and self.now() - start < timeout:
@@ -110,7 +125,8 @@ class Phase2Check(Node):
         return self.now() - start
 
     def turn_test(self, v, w):
-        """Drive a steady turn; return the measured radius of base_footprint's path and the yaw rate."""
+        """Drive a steady turn; return the measured radius of base_footprint's path, the yaw rate
+        and the steering angles. Also keeps the /vel_raw seen at the end, with the bicycle angle then."""
         self.settle_steering(v, w)
         points, t0, yaw0 = [], self.now(), self.pose(self.truth)[2]
         total_yaw = 0.0
@@ -127,12 +143,14 @@ class Phase2Check(Node):
         radius = fit_circle(points)
         yaw_rate = total_yaw / (self.now() - t0)
         left, right = self.joints['front_left_steer_joint'], self.joints['front_right_steer_joint']
+        self.turn_vel_raw, self.turn_bicycle_angle = self.vel_raw, self.bicycle_angle()
         self.stop()
         return radius, yaw_rate, left, right
 
     def run(self):
         self.get_logger().info('Waiting for /ground_truth/odom, /odom_raw and /joint_states ...')
-        while rclpy.ok() and (self.truth is None or self.odom is None or not self.joints or self.now() == 0.0):
+        while rclpy.ok() and (self.truth is None or self.odom is None or self.vel_raw is None
+                              or not self.joints or self.now() == 0.0):
             rclpy.spin_once(self, timeout_sec=0.1)
         self.stop(1.0)
 
@@ -173,22 +191,27 @@ class Phase2Check(Node):
         # Stop
         self.check('stop: zero command stops it', abs(self.speed()) < 0.01, f'{self.speed():.4f} m/s after 1.5 s')
 
-        # Steering speed: not pass/fail, because Fortress's plugin has no setting for it.
-        # Recorded so the gap with the real servo stays visible (see docs/research/02-phase2-drive.md).
+        # Steering speed: from straight to the 0.6 m turn. r2_drive.py moves the steering at
+        # steer_rate, like a servo; Phase 2's AckermannSteering plugin took 2.5 s here.
         v, r = 0.2, 0.6
-        inner = math.atan(WHEEL_BASE / (r - KINGPIN_WIDTH / 2))
+        steer_rate = self.drive_parameter('steer_rate')
+        target = math.atan(WHEEL_BASE / r)
         start = self.now()
         reached = None
         while rclpy.ok() and self.now() - start < 10.0:
-            self.drive(0.05, v, v / r, on_tick=track)
-            if self.steering()[0] >= 0.9 * inner:
+            self.drive(0.02, v, v / r, on_tick=track)
+            if self.bicycle_angle() >= 0.9 * target:
                 reached = self.now() - start
                 break
         self.stop()
         track()
-        self.get_logger().info(
-            f'INFO  steering speed: 0 -> 90% of {inner:.3f} rad took '
-            + (f'{reached:.2f} s' if reached else 'over 10 s') + ' (a hobby servo takes ~0.2 s)')
+        if steer_rate:
+            allowed = 0.9 * target / steer_rate + 0.15
+            self.check('steering: speed', reached is not None and reached <= allowed,
+                       f'0 -> 90% of {target:.3f} rad took ' + (f'{reached:.2f} s' if reached else 'over 10 s')
+                       + f' (steer_rate {steer_rate} rad/s allows {allowed:.2f} s)')
+        else:
+            self.check('steering: speed', False, 'could not read steer_rate from /r2_drive')
 
         # Steady left turn, rear-axle radius 0.6 m
         radius, yaw_rate, left, right = self.turn_test(v, v / r)
@@ -202,6 +225,11 @@ class Phase2Check(Node):
                    f'{yaw_rate:.3f} rad/s (commanded {v / r:.3f})')
         self.check('turn: Ackermann wheel angles', abs(left - inner) < 0.02 and abs(right - outer) < 0.02,
                    f'inner (left) {left:.3f} vs {inner:.3f}, outer (right) {right:.3f} vs {outer:.3f} rad')
+
+        vel, delta = self.turn_vel_raw, self.turn_bicycle_angle
+        self.check('vel_raw: speed and steering angle', abs(vel.linear.x - v) < 0.01
+                   and abs(vel.linear.y - math.degrees(delta)) < 0.5,
+                   f'{vel.linear.x:.3f} m/s, {vel.linear.y:.2f} deg (joints: {math.degrees(delta):.2f} deg)')
 
         # Right turn mirrors the left one
         radius_r, yaw_rate_r, _, _ = self.turn_test(v, -v / r)
@@ -226,6 +254,17 @@ class Phase2Check(Node):
         x1, y1, _ = self.pose(self.truth)
         backward = (x1 - x0) * math.cos(yaw0) + (y1 - y0) * math.sin(yaw0)
         self.check('reverse: drives backwards', backward < -0.25, f'{backward:+.3f} m')
+
+        # Reverse while asking to turn left: a car reversing with left steering turns its nose right,
+        # so for angular.z > 0 the steering goes right and the yaw rate must still be positive
+        self.drive(1.0, -0.2, 0.3, on_tick=track)
+        yaw_a, t_a = self.pose(self.truth)[2], self.now()
+        self.drive(3.0, -0.2, 0.3, on_tick=track)
+        reverse_rate = math.remainder(self.pose(self.truth)[2] - yaw_a, math.tau) / (self.now() - t_a)
+        self.stop()
+        track()
+        self.check('reverse turn: yaw follows angular.z', reverse_rate > 0 and abs(reverse_rate - 0.3) < 0.03,
+                   f'{reverse_rate:+.3f} rad/s (commanded +0.300)')
 
         # Speed limit
         speeds = []
