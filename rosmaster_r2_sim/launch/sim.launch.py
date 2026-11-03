@@ -3,6 +3,7 @@
     ros2 launch rosmaster_r2_sim sim.launch.py                  # with the Gazebo window
     ros2 launch rosmaster_r2_sim sim.launch.py headless:=true    # server only (Jetson)
     ros2 launch rosmaster_r2_sim sim.launch.py publish_odom_tf:=true  # no EKF: odom TF from wheels
+    ros2 launch rosmaster_r2_sim sim.launch.py localization:=true     # the real Madgwick filter + EKF
     ros2 launch rosmaster_r2_sim sim.launch.py world:=test_room      # walls and obstacles
     ros2 launch rosmaster_r2_sim sim.launch.py camera:=false          # no depth camera (faster)
     ros2 launch rosmaster_r2_sim sim.launch.py test_actuators:=true   # Phase 1 test rig
@@ -50,6 +51,11 @@ def launch_setup(context):
     test_actuators = LaunchConfiguration('test_actuators').perform(context)
     camera = LaunchConfiguration('camera').perform(context)
     world = LaunchConfiguration('world').perform(context)
+    localization = LaunchConfiguration('localization').perform(context) == 'true'
+    publish_odom_tf = LaunchConfiguration('publish_odom_tf').perform(context) == 'true'
+    if localization and publish_odom_tf:
+        raise RuntimeError('publish_odom_tf:=true and localization:=true would both publish '
+                           'odom -> base_footprint; pick one')
     if os.sep not in world:
         # A bare name means one of this package's worlds
         world = os.path.join(pkg, 'worlds', world if world.endswith('.sdf') else f'{world}.sdf')
@@ -101,7 +107,7 @@ def launch_setup(context):
             executable='r2_drive.py',
             name='r2_drive',
             parameters=[os.path.join(pkg, 'config', 'r2_drive.yaml'), drive_geometry(urdf), {
-                'publish_odom_tf': LaunchConfiguration('publish_odom_tf').perform(context) == 'true',
+                'publish_odom_tf': publish_odom_tf,
                 'use_sim_time': True}],
             output='screen')]
 
@@ -112,7 +118,26 @@ def launch_setup(context):
         parameters=[{'config_file': os.path.join(pkg, 'config', f'{name}.yaml'),
                      'use_sim_time': True}]) for name in bridge_configs]
 
-    return [gazebo, robot_state_publisher, spawn, *bridges, *drive]
+    # The real robot's IMU filter and EKF, with their own config files from the installed packages.
+    # Not included through ekf_x1_x3_launch.py: it cannot set use_sim_time, which the config
+    # hard-codes to false; a later parameter dict overrides it.
+    localization_nodes = []
+    if localization:
+        localization_nodes = [
+            Node(package='imu_filter_madgwick', executable='imu_filter_madgwick_node',
+                 name='imu_filter_madgwick',
+                 parameters=[os.path.join(get_package_share_directory('yahboomcar_bringup'),
+                                          'param', 'imu_filter_param.yaml'),
+                             {'use_sim_time': True}]),
+            Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node',
+                 output='screen',
+                 parameters=[os.path.join(get_package_share_directory('robot_localization'),
+                                          'params', 'ekf_x1_x3.yaml'),
+                             {'use_sim_time': True}],
+                 remappings=[('/odometry/filtered', '/odom')]),
+        ]
+
+    return [gazebo, robot_state_publisher, spawn, *bridges, *drive, *localization_nodes]
 
 
 def generate_launch_description():
@@ -127,6 +152,9 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_odom_tf', default_value='false', choices=['true', 'false'],
                               description='Publish odom -> base_footprint from wheel odometry '
                                           '(leave false when an EKF publishes it)'),
+        DeclareLaunchArgument('localization', default_value='false', choices=['true', 'false'],
+                              description="Run the real robot's imu_filter_madgwick and robot_localization EKF "
+                                          '(they publish /imu/data, /odom and odom -> base_footprint)'),
         DeclareLaunchArgument('world', default_value='empty',
                               description="A world in this package ('empty', 'test_room') or a path to an .sdf file"),
         DeclareLaunchArgument('camera', default_value='true', choices=['true', 'false'],

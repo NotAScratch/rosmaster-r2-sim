@@ -7,7 +7,7 @@ install(DIRECTORY urdf worlds launch config
   DESTINATION share/${PROJECT_NAME})
 
 install(PROGRAMS scripts/r2_drive.py scripts/ackermann.py
-  scripts/phase1_check.py scripts/phase2_check.py scripts/phase3_check.py
+  scripts/phase1_check.py scripts/phase2_check.py scripts/phase3_check.py scripts/phase4_check.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
